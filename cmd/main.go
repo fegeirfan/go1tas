@@ -12,58 +12,62 @@ import (
 )
 
 func main() {
-	// Initialize database
+	// 1. Initialize database (Postgres/SQL)
 	db, err := repository.NewDB()
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
+	log.Println("PostgreSQL connected")
 
-	// Initialize repositories
-	userRepo := repository.NewUserRepository(db)
-	ticketRepo := repository.NewTicketRepository(db)
+	// 2. Configuration (Port & Secret)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-	// Get JWT secret from environment
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "docger_secret_key_2024"
 	}
 
-	// Initialize services
+	// 3. Initialize Layers (Dependency Injection)
+	userRepo := repository.NewUserRepository(db)
+	ticketRepo := repository.NewTicketRepository(db)
+
 	userService := service.NewUserService(userRepo, jwtSecret)
 	ticketService := service.NewTicketService(ticketRepo, userRepo)
 
-	// Initialize handlers
 	userHandler := handler.NewUserHandler(userService)
 	ticketHandler := handler.NewTicketHandler(ticketService)
 
-	// Setup Gin router
+	// 4. Setup Gin router
 	r := gin.Default()
 
-	// CORS middleware
+	// Global Middleware - CORS
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
 		}
-
 		c.Next()
 	})
 
-	// Public routes
+	// Public Routes
 	r.POST("/api/auth/register", userHandler.Register)
 	r.POST("/api/auth/login", userHandler.Login)
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
-	// Protected routes
+	// Protected Routes Group
 	authMiddleware := handler.AuthMiddleware(userService)
 	protected := r.Group("/api")
 	protected.Use(authMiddleware)
 	{
-		// User routes
 		protected.GET("/profile", userHandler.GetProfile)
 
 		// Ticket routes
@@ -81,17 +85,6 @@ func main() {
 			admin.GET("/tickets", ticketHandler.GetAllTickets)
 			admin.POST("/tickets/:id/assign", ticketHandler.AssignTicket)
 		}
-	}
-
-	// Health check
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
-
-	// Get port from environment
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
 	}
 
 	log.Printf("Server starting on port %s", port)

@@ -36,11 +36,17 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.User, error) 
 		return nil, err
 	}
 
+	// Determine role - check admin secret
+	role := "user"
+	if req.AdminSecret == "admin123secret" {
+		role = "admin"
+	}
+
 	user := &model.User{
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: string(hashedPassword),
-		Role:         "user",
+		Role:         role,
 	}
 
 	err = s.userRepo.Create(user)
